@@ -5,12 +5,12 @@
     Subject: The subject name or number, using any convention
     Condition: The experimental condition
     Step Size: The amount to increase/decrease stimulus
-    Noise Level (dB SPL): The level in dB SPL of the fixed noise. 
+    Noise Level (dB): The level in dB of the fixed noise. 
         Note that noise must be played from another device.
     Calibration: Enter "y" or "n" to play the calibration file.
         A sound level meter should be used to record the 
         output level. 
-    SLM Output: The level in dB SPL from the sound level meter 
+    SLM Output: The level in dB from the sound level meter 
         when playing the calibration file.
 
     Written by: Travis M. Moore
@@ -33,13 +33,16 @@ import os
 import sys
 from scipy.io import wavfile
 import csv
-from pydub import AudioSegment, effects
+#from pydub import AudioSegment, effects
 
 sys.path.append('.\\lib') # Point to custom library file
 import tmsignals as ts # Custom library
 import importlib 
 importlib.reload(ts) # Reload custom module on every run
 
+#################################
+#### FOLDER/INPUT MANAGEMENT ####
+#################################
 # Ensure that relative paths start from the same directory as this script
 _thisDir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(_thisDir)
@@ -60,7 +63,7 @@ else:
 try:
     expInfo = fromFile('lastParams.pickle')
 except:
-    expInfo = {'Subject':'999', 'Condition':'Quiet', 'Step Size':2.0, 'Starting Level': 65.0, 'Noise Level (dB SPL)':70.0, 'Calibration':'n', 'SLM Output':30.0}
+    expInfo = {'Subject':'999', 'Condition':'Quiet', 'Step Size':2.0, 'Starting Level': 65.0, 'Noise Level (dB)':70.0, 'Calibration':'n', 'SLM Output':30.0}
 expInfo['dateStr'] = data.getDateStr()
 
 dlg = gui.DlgFromDict(expInfo, title='Adaptive SNR50 Task',
@@ -70,17 +73,21 @@ if dlg.OK:
 else:
     core.quit()
 
-
 # Reference level for calibration and use with offset
-REF_LEVEL = -10.0
+REF_LEVEL = -20.0
 
-# Calibration routine
+###################################
+#### BEGIN CALIBRATION ROUTINE ####
+###################################
+# Calibration routine begins here to avoid writing
+# a file when just running calibration
 if expInfo['Calibration'] == 'y':
     print('Playing calibration file')
     [fs, calStim] = wavfile.read('calibration\\IEEE_cal.wav')
-    # Set target level (taken from thisIncrement on each loop iteration)
+    # Normalize between 1/-1
+    calStim = ts.doNormalize(calStim, 48000)
+    # Set target level
     calStim = ts.setRMS(calStim,REF_LEVEL,eq='n')
-    calStim = calStim/np.max(calStim)
     sigdur = len(calStim) / fs
     probe = sound.Sound(value=calStim.T,
         secs=sigdur, stereo=-1, volume=1.0, loops=0, 
@@ -90,15 +97,35 @@ if expInfo['Calibration'] == 'y':
     probe.play()
     core.wait(probe.secs+0.001)
     core.quit()
+#################################
+#### END CALIBRATION ROUTINE ####
+#################################
 
 SLM_OFFSET = expInfo['SLM Output'] - REF_LEVEL
 STARTING_LEVEL = expInfo['Starting Level'] - SLM_OFFSET
+print("\n")
+print("SLM OUTPUT: " + str(expInfo['SLM Output']))
+print("-")
+print("REF LEVEL: " + str(REF_LEVEL))
+print("=")
+print("SLM OFFSET: " + str(SLM_OFFSET))
+print("\n")
+print("Desired starting level: " + str(expInfo['Starting Level']))
+print("-")
+print("SLM OFFSET: " + str(SLM_OFFSET))
+print("=")
+print("STARTING LEVEL: " + str(STARTING_LEVEL))
+print("\n")
 
 # make a text file to save data
 fileName = _thisDir + os.sep + 'data' + os.sep + '%s_%s_%s' % (expInfo['Subject'], expInfo['Condition'], expInfo['dateStr'])
 dataFile = open(fileName+'.csv', 'w')
 dataFile.write('subject,condition,step_size,num_correct,response,slm_output,slm_cf,raw_level,final_level\n')
 
+
+##########################
+#### STIMULI/PARADIGM ####
+##########################
 # Assign script-wide variables
 fileList = os.listdir('.\\audio')
 # Get list of IEEE sentences
@@ -145,56 +172,44 @@ event.waitKeys()
 # Initialize variables
 thisResp = None
 
+
+#########################
+#### BEGIN STAIRCASE ####
+#########################
 # Present stimuli using staircase procedure
 counter = -1
 for thisIncrement in staircase:
     print("Raw Level: %f " % thisIncrement)
-    print("Corrected Level: " + str(thisIncrement+SLM_OFFSET) + " dB SPL")
+    print("Corrected Level: " + str(thisIncrement+SLM_OFFSET) + " dB")
 
-    counter += 1
-    myPath = 'audio\\'
-    myFile = fileList[counter]
-    myFilePath = myPath + myFile
-    [fs, myTarget] = wavfile.read(myFilePath)
-    # Set target level (taken from thisIncrement on each loop iteration)
+    counter += 1 # for cycling through list of audio file names
 
-    # Normalization between 1 and -1, but it's sooooooo slow
-    #myTarget = [2*(x-np.min(myTarget)) / (np.max(myTarget)-(np.min(myTarget)))-1 for x in myTarget]
-    #myTarget = myTarget/np.max(myTarget) # Fast normalization with 1 as max but no min
-
-    # 1/-1 in for fast processing
-    # myTarget = myTarget-np.min(myTarget)
-    # denom = np.max(myTarget) - np.min(myTarget)
-    # myTarget = myTarget/denom
-    # myTarget = myTarget * 2
-    # myTarget = myTarget -1
-
+    # Initialize stimulus
+    [fs, myTarget] = wavfile.read('audio\\' + fileList[counter])
+    # Normalization between 1 and -1
     myTarget = ts.doNormalize(myTarget,48000)
-    plt.plot(myTarget)
-    plt.show()
 
-    myTarget = ts.setRMS(myTarget,thisIncrement,eq='n')
-
-
-
-
+    # Present calibration stimulus for testing
     [fs, calStim] = wavfile.read('calibration\\IEEE_cal.wav')
-    # Set target level (taken from thisIncrement on each loop iteration)
-    myTarget = calStim[:int(len(calStim)/2)]
-    myTarget = myTarget/np.max(myTarget)
-    #myTarget = ts.setRMS(myTarget,thisIncrement-3.5,eq='n')
+    myTarget = calStim[:int(len(calStim)/2)] # truncate
     # Normalize between +1/-1
     myTarget = ts.doNormalize(myTarget,48000)
     plt.plot(myTarget)
+    plt.ylim([-1,1])
     plt.show()
+
+    # Set target level (taken from thisIncrement on each loop iteration)
     myTarget = ts.setRMS(myTarget,thisIncrement,eq='n')
+    plt.plot(myTarget)
+    plt.ylim([-1,1])
+    plt.show()
 
-
-
+    ###################################
     ###### STIMULUS PRESENTATION ######
+    ###################################
     # Show stimulus text
-    theText = ''.join(sentences[counter+1])
-    #text_stim.setText(theText[4:-1])
+    # extract one sentence from list as string
+    theText = ''.join(sentences[counter+1]) 
     text_stim.setText('Wait...\n\n' + theText)
     text_stim.setHeight(25)
     text_stim.draw()
@@ -254,10 +269,16 @@ for thisIncrement in staircase:
             expInfo['Condition'], expInfo['Step Size'], thisKey, thisResp, 
             expInfo['SLM Output'], SLM_OFFSET, thisIncrement, thisIncrement+SLM_OFFSET))
         core.wait(1)
+#######################
+#### END STAIRCASE ####
+#######################
 
-# Staircase has ended
+
+###############################
+#### DATA WRITING/FEEDBACK ####
+###############################
 approxThreshold = np.average(staircase.reversalIntensities[-2:])
-dataFile.write('SNR50: ' + str((approxThreshold+SLM_OFFSET)-expInfo['Noise Level (dB SPL)']) + ' dB SPL')
+dataFile.write('SNR50: ' + str((approxThreshold+SLM_OFFSET)-expInfo['Noise Level (dB)']) + ' dB')
 core.wait(0.5)
 dataFile.close()
 staircase.saveAsPickle(fileName)
@@ -269,15 +290,14 @@ print(staircase.reversalIntensities)
 approxThreshold = np.average(staircase.reversalIntensities[-2:])
 print('Mean of final 2 reversals = %.3f' % (approxThreshold+SLM_OFFSET))
 print('Mean of 2 reversals = %.3f' % (approxThreshold))
-print('SNR50:' + str(thisIncrement-expInfo['Noise Level (dB SPL)']) + 'dB SPL')
+print('SNR50:' + str(thisIncrement-expInfo['Noise Level (dB)']) + 'dB')
 
 #  Give some on-screen feedback
 feedback1 = visual.TextStim(
     win, pos=[0,+3],
-    #text='Mean of final 2 reversals = %.3f' % (approxThreshold+SLM_OFFSET))
-    text = 'Average Speech Performance: ' + str(approxThreshold+SLM_OFFSET) + ' dB SPL' +
-        '\nNoise Level: ' + str(expInfo['Noise Level (dB SPL)']) + ' dB SPL' +
-        '\n\nSNR50: ' + str((approxThreshold+SLM_OFFSET)-expInfo['Noise Level (dB SPL)']) + ' dB SPL')
+    text = 'Average Speech Performance: ' + str(approxThreshold+SLM_OFFSET) + ' dB' +
+        '\nNoise Level: ' + str(expInfo['Noise Level (dB)']) + ' dB' +
+        '\n\nSNR50: ' + str((approxThreshold+SLM_OFFSET)-expInfo['Noise Level (dB)']) + ' dB')
 
 feedback1.draw()
 win.flip()

@@ -174,6 +174,7 @@ def doNormalize(sig,fs=48000):
         in a way for fast processing because looping
         through values of lengthy signals takes 
         too long for on-the-fly processing.
+        Based on: myTarget = [2*(x-np.min(myTarget)) / (np.max(myTarget)-(np.min(myTarget)))-1 for x in myTarget]
 
             SIG: a 1-channel array
             FS: the sampling rate
