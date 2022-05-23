@@ -135,11 +135,6 @@ def doLocatePeak():
     pass
 
 
-
-
-
-
-
 def doLoop(sig,numreps,sildur,fs=48000):
     """ Make a train consisting of NUMREPS of repetitions 
         of a given signal SIG separated by silence (i.e.,
@@ -170,6 +165,29 @@ def doLoop(sig,numreps,sildur,fs=48000):
         justone = np.hstack([sig, shh])
         train = np.hstack((justone,) * numreps)
         return train
+
+
+def doNormalize(sig,fs=48000):
+    """
+        Normalize an array between +1 and -1. 
+        Useful for audio signals. Implemented 
+        in a way for fast processing because looping
+        through values of lengthy signals takes 
+        too long for on-the-fly processing.
+
+            SIG: a 1-channel array
+            FS: the sampling rate
+
+        Written by: Travis M. Moore
+        Created: May 23, 2022
+        Last Edited: May 23, 2022
+    """
+    sig = sig-np.min(sig)
+    denom = np.max(sig) - np.min(sig)
+    sig = sig/denom
+    sig = sig * 2
+    sig = sig -1
+    return sig
 
 
 def mag2db(mag):
