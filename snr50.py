@@ -2,20 +2,21 @@
     An adaptive task to find the SNR50 for IEEE 
     sentences in a fixed background noise. 
 
-    Subject: The subject name or number, using any convention
-    Condition: The experimental condition
-    Step Size: The amount to increase/decrease stimulus
-    Noise Level (dB): The level in dB of the fixed noise. 
-        Note that noise must be played from another device.
-    Calibration: Enter "y" or "n" to play the calibration file.
-        A sound level meter should be used to record the 
-        output level. 
-    SLM Output: The level in dB from the sound level meter 
-        when playing the calibration file.
+        SUBJECT: The subject name or number, using any convention.
+        CONDITION: The experimental condition.
+        STEP SIZE: The amount to increase/decrease stimulus.
+        STARTING LEVEL: The desired starting level in dB.
+        NOISE LEVEL (DB): The level in dB of the fixed noise. 
+            Note that noise must be played from another device.
+        CALIBRATION: Enter "y" or "n" to play the calibration file.
+            A sound level meter should be used to record the 
+            output level. 
+        SLM OUTPUT: The level in dB from the sound level meter 
+            when playing the calibration file.
 
     Written by: Travis M. Moore
     Created: May 18, 2022
-    Last edited: May 19, 2022
+    Last edited: May 23, 2022
 """
 
 # Import psychopy tools
@@ -33,7 +34,6 @@ import os
 import sys
 from scipy.io import wavfile
 import csv
-#from pydub import AudioSegment, effects
 
 sys.path.append('.\\lib') # Point to custom library file
 import tmsignals as ts # Custom library
@@ -75,6 +75,13 @@ else:
 
 # Reference level for calibration and use with offset
 REF_LEVEL = -20.0
+
+
+print(expInfo['Noise Level (dB)'])
+print(type(expInfo['Noise Level (dB)']))
+
+
+
 
 ###################################
 #### BEGIN CALIBRATION ROUTINE ####
@@ -194,15 +201,15 @@ for thisIncrement in staircase:
     myTarget = calStim[:int(len(calStim)/2)] # truncate
     # Normalize between +1/-1
     myTarget = ts.doNormalize(myTarget,48000)
-    plt.plot(myTarget)
-    plt.ylim([-1,1])
-    plt.show()
+    #plt.plot(myTarget)
+    #plt.ylim([-1,1])
+    #plt.show()
 
     # Set target level (taken from thisIncrement on each loop iteration)
     myTarget = ts.setRMS(myTarget,thisIncrement,eq='n')
-    plt.plot(myTarget)
-    plt.ylim([-1,1])
-    plt.show()
+    #plt.plot(myTarget)
+    #plt.ylim([-1,1])
+    #plt.show()
 
     ###################################
     ###### STIMULUS PRESENTATION ######
@@ -278,7 +285,9 @@ for thisIncrement in staircase:
 #### DATA WRITING/FEEDBACK ####
 ###############################
 approxThreshold = np.average(staircase.reversalIntensities[-2:])
-dataFile.write('SNR50: ' + str((approxThreshold+SLM_OFFSET)-expInfo['Noise Level (dB)']) + ' dB')
+snr50 = (approxThreshold+SLM_OFFSET)-expInfo['Noise Level (dB)']
+#dataFile.write('SNR50: ' + str((approxThreshold+SLM_OFFSET)-expInfo['Noise Level (dB)']) + ' dB')
+dataFile.write('SNR50: ' + str(snr50) + ' dB')
 core.wait(0.5)
 dataFile.close()
 staircase.saveAsPickle(fileName)
@@ -288,16 +297,18 @@ staircase.saveAsExcel(fileName + '.xlsx', sheetName='trials')
 print('reversals:')
 print(staircase.reversalIntensities)
 approxThreshold = np.average(staircase.reversalIntensities[-2:])
-print('Mean of final 2 reversals = %.3f' % (approxThreshold+SLM_OFFSET))
-print('Mean of 2 reversals = %.3f' % (approxThreshold))
-print('SNR50:' + str(thisIncrement-expInfo['Noise Level (dB)']) + 'dB')
+approxThresholdCorrected = approxThreshold+SLM_OFFSET
+print('Average Speech Performance (raw): %.3f' % (approxThreshold))
+print('Average Speech Performance (corrected ): %.3f' % (approxThreshold+SLM_OFFSET))
+print('Noise Level (dB): %.3f' % (expInfo['Noise Level (dB)']))
+print('SNR50:' + str(snr50) + 'dB')
 
 #  Give some on-screen feedback
 feedback1 = visual.TextStim(
     win, pos=[0,+3],
-    text = 'Average Speech Performance: ' + str(approxThreshold+SLM_OFFSET) + ' dB' +
+    text = 'Average Speech Performance: ' + str(approxThresholdCorrected) + ' dB' +
         '\nNoise Level: ' + str(expInfo['Noise Level (dB)']) + ' dB' +
-        '\n\nSNR50: ' + str((approxThreshold+SLM_OFFSET)-expInfo['Noise Level (dB)']) + ' dB')
+        '\n\nSNR50: ' + str(snr50) + ' dB')
 
 feedback1.draw()
 win.flip()

@@ -4,3 +4,5 @@ audio/
 lastParams.pickle
 
 data/
+
+__pycache__
