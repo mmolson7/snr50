@@ -1,9 +1,24 @@
 """ 
-    An adaptive task to find the SNR50 for IEEE 
-    sentences in a fixed background noise. 
+    An adaptive task to find the SNR50 for IEEE sentences in a fixed 
+    background noise. Noise must be played externally (e.g., from 
+    Audition). 
+    
+    THIS VERSION USES SOUNDDEVICE AS THE AUDIO LIBRARY. This script 
+    supports multichannel audio and sound device selection. 
+
+    NOTES:
+        1. If you run out of stimuli (i.e., do not reach threshold 
+        before the stimuli are exhausted), the routine will end 
+        and the data will be saved; however, no values will be 
+        calculated.
+        2. If you press an unexpected key (i.e., anything other 
+        than the numbers 1 - 5 from the numpad only), the response
+        will be scored as incorrect and the routine will continue.
 
         SUBJECT: The subject name or number, using any convention.
         CONDITION: The experimental condition.
+        LIST NUMBERS: Number of each list to include in playback. 
+            Enter numbers separated by spaces.
         STEP SIZE: The amount to increase/decrease stimulus.
         STARTING LEVEL: The desired starting level in dB.
         NOISE LEVEL (DB): The level in dB of the fixed noise. 
@@ -16,11 +31,11 @@
 
     Written by: Travis M. Moore
     Created: May 18, 2022
-    Last edited: May 23, 2022
+    Last edited: May 24, 2022
 """
 
 # Import psychopy tools
-import this
+#import this
 from psychopy import core, visual, gui, data, event, prefs
 from psychopy.tools.filetools import fromFile, toFile
 import psychtoolbox as ptb
@@ -30,10 +45,11 @@ from psychopy import sound # Import "sound" AFTER assigning library!!
 # Import published modules
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 import os
 import sys
 from scipy.io import wavfile
-import csv
+import sounddevice as sd
 
 sys.path.append('.\\lib') # Point to custom library file
 import tmsignals as ts # Custom library
@@ -63,7 +79,7 @@ else:
 try:
     expInfo = fromFile('lastParams.pickle')
 except:
-    expInfo = {'Subject':'999', 'Condition':'Quiet', 'Step Size':2.0, 'Starting Level': 65.0, 'Noise Level (dB)':70.0, 'Calibration':'n', 'SLM Output':30.0}
+    expInfo = {'Subject':'999', 'Condition':'Quiet', 'List Numbers':'1 2', 'Step Size':2.0, 'Starting Level': 65.0, 'Noise Level (dB)':70.0, 'Calibration':'n', 'SLM Output':80.0}
 expInfo['dateStr'] = data.getDateStr()
 
 dlg = gui.DlgFromDict(expInfo, title='Adaptive SNR50 Task',
@@ -75,13 +91,6 @@ else:
 
 # Reference level for calibration and use with offset
 REF_LEVEL = -20.0
-
-
-print(expInfo['Noise Level (dB)'])
-print(type(expInfo['Noise Level (dB)']))
-
-
-
 
 ###################################
 #### BEGIN CALIBRATION ROUTINE ####
@@ -96,13 +105,17 @@ if expInfo['Calibration'] == 'y':
     # Set target level
     calStim = ts.setRMS(calStim,REF_LEVEL,eq='n')
     sigdur = len(calStim) / fs
-    probe = sound.Sound(value=calStim.T,
-        secs=sigdur, stereo=-1, volume=1.0, loops=0, 
-        sampleRate=fs, blockSize=4800, preBuffer=-1, 
-        hamming=False, startTime=0, stopTime=-1, 
-        autoLog=True)
-    probe.play()
-    core.wait(probe.secs+0.001)
+    # Present using PsychoPy PTB
+    # probe = sound.Sound(value=calStim.T,
+    #     secs=sigdur, stereo=-1, volume=1.0, loops=0, 
+    #     sampleRate=fs, blockSize=4800, preBuffer=-1, 
+    #     hamming=False, startTime=0, stopTime=-1, 
+    #     autoLog=True)
+    # probe.play()
+    # core.wait(probe.secs+0.001)
+    # Present using sounddevice
+    sd.play(calStim,fs)
+    core.wait(sigdur+0.01)
     core.quit()
 #################################
 #### END CALIBRATION ROUTINE ####
@@ -129,16 +142,36 @@ fileName = _thisDir + os.sep + 'data' + os.sep + '%s_%s_%s' % (expInfo['Subject'
 dataFile = open(fileName+'.csv', 'w')
 dataFile.write('subject,condition,step_size,num_correct,response,slm_output,slm_cf,raw_level,final_level\n')
 
-
 ##########################
 #### STIMULI/PARADIGM ####
 ##########################
 # Assign script-wide variables
-fileList = os.listdir('.\\audio')
+#fileList = os.listdir('.\\audio')
 # Get list of IEEE sentences
-file_csv = open('.\\sentences\\IEEE.csv')
-data_csv = csv.reader(file_csv)
-sentences = list(data_csv)
+#file_csv = open('.\\sentences\\IEEE.csv')
+#data_csv = csv.reader(file_csv)
+#sentences = list(data_csv)
+
+# Get lists of written sentences
+df = pd.read_csv('.\\sentences\\IEEE-DF.csv')
+lists = expInfo['List Numbers'].split()
+lists = [int(x) for x in lists]
+sentences = df.loc[df['list_num'].isin(lists), 'ieee_text']
+print(sentences)
+
+# Get audio files
+# NOTE: files must be renames as increasing
+# integer values (e.g., 1, 2, 3...)
+fileList = os.listdir('.\\audio\\IEEE')
+x = [x[:-4] for x in fileList] # strip off '.wav'
+fileList = sorted(x, key = int) # sort strings as int
+fileList = [x+'.wav' for x in fileList] # add '.wav' back
+sentence_nums = df.loc[df['list_num'].isin(lists), 'sentence_num']
+sentence_nums = np.array(sentence_nums)
+#print(sentence_nums)
+fileList = np.array(fileList)
+fileList = fileList[sentence_nums]
+#print(fileList)
 
 # Create staircase handler
 staircase = data.StairHandler(startVal = STARTING_LEVEL,
@@ -179,7 +212,6 @@ event.waitKeys()
 # Initialize variables
 thisResp = None
 
-
 #########################
 #### BEGIN STAIRCASE ####
 #########################
@@ -192,23 +224,41 @@ for thisIncrement in staircase:
     counter += 1 # for cycling through list of audio file names
 
     # Initialize stimulus
-    [fs, myTarget] = wavfile.read('audio\\' + fileList[counter])
+    try: # Import stimulus from file
+        [fs, myTarget] = wavfile.read('audio\\IEEE\\' + fileList[counter])
+    except: # No stimuli left in list
+        dataFile.close()
+        staircase.saveAsPickle(fileName)
+        feedback1 = visual.TextStim(
+            win, pos=[0,+3],
+            text = 'You ran out of lists! The data collected so far have been saved, ' +
+                'but you will have to calculate SNR50 manually.')
+
+        feedback1.draw()
+        win.flip()
+        event.waitKeys() # wait for participant to respond
+
+        win.close()
+        core.quit()
     # Normalization between 1 and -1
     myTarget = ts.doNormalize(myTarget,48000)
+    #plt.plot(myTarget)
+    #plt.show()
 
+    """
     # Present calibration stimulus for testing
     [fs, calStim] = wavfile.read('calibration\\IEEE_cal.wav')
     myTarget = calStim[:int(len(calStim)/2)] # truncate
     # Normalize between +1/-1
     myTarget = ts.doNormalize(myTarget,48000)
-    #plt.plot(myTarget)
-    #plt.ylim([-1,1])
-    #plt.show()
+    """
 
     # Set target level (taken from thisIncrement on each loop iteration)
     myTarget = ts.setRMS(myTarget,thisIncrement,eq='n')
     #plt.plot(myTarget)
     #plt.ylim([-1,1])
+    #plt.show()
+    #plt.plot(myTarget)
     #plt.show()
 
     ###################################
@@ -216,7 +266,8 @@ for thisIncrement in staircase:
     ###################################
     # Show stimulus text
     # extract one sentence from list as string
-    theText = ''.join(sentences[counter+1]) 
+    theText = ''.join(sentences.iloc[counter])
+    words = theText.split()
     text_stim.setText('Wait...\n\n' + theText)
     text_stim.setHeight(25)
     text_stim.draw()
@@ -224,14 +275,18 @@ for thisIncrement in staircase:
 
     # Play stimulus
     sigdur = len(myTarget) / fs
-    probe = sound.Sound(value=myTarget.T,
-        secs=sigdur, stereo=-1, volume=1.0, loops=0, 
-        sampleRate=fs, blockSize=4800, preBuffer=-1, 
-        hamming=False, startTime=0, stopTime=-1, 
-        autoLog=True)
-    probe.play()
-    core.wait(probe.secs+0.001)
-    
+     # Present using PsychoPy PTB
+    # probe = sound.Sound(value=myTarget.T,
+    #     secs=sigdur, stereo=-1, volume=1.0, loops=0, 
+    #     sampleRate=fs, blockSize=4800, preBuffer=-1, 
+    #     hamming=False, startTime=0, stopTime=-1, 
+    #     autoLog=True)
+    # probe.play()
+    # core.wait(probe.secs+0.001)
+    # Present using sounddevice
+    sd.play(myTarget, fs)
+    core.wait(sigdur+0.01)
+
     # Clear the window
     text_stim.setText(" ")
     text_stim.draw()
@@ -259,7 +314,9 @@ for thisIncrement in staircase:
                 thisKey = int(thisKey[-1])
             elif thisKey in ['q', 'escape']:
                 core.quit() # abort experiment
-            #else: thisResp = 999 # make this an int to avoid the program crashing
+            else:
+                thisKey = int(999)
+                thisResp = 999 # make this an int to avoid the program crashing
         event.clearEvents() # clear other (e.g., mouse events: they clog the buffer)
 
         # Assign pass/fail
@@ -268,7 +325,7 @@ for thisIncrement in staircase:
         elif thisResp == 1: # Must use 1/-1 for psychopy logic
             print("Pass")
         else: 
-            print("Response not recorded!")
+            print("Invalid Response!")
 
         # Update staircase handler and write data to file
         staircase.addData(thisResp)
@@ -285,8 +342,8 @@ for thisIncrement in staircase:
 #### DATA WRITING/FEEDBACK ####
 ###############################
 approxThreshold = np.average(staircase.reversalIntensities[-2:])
+approxThresholdCorrected = approxThreshold+SLM_OFFSET
 snr50 = (approxThreshold+SLM_OFFSET)-expInfo['Noise Level (dB)']
-#dataFile.write('SNR50: ' + str((approxThreshold+SLM_OFFSET)-expInfo['Noise Level (dB)']) + ' dB')
 dataFile.write('SNR50: ' + str(snr50) + ' dB')
 core.wait(0.5)
 dataFile.close()
@@ -296,8 +353,6 @@ staircase.saveAsExcel(fileName + '.xlsx', sheetName='trials')
 # give feedback in the command line 
 print('reversals:')
 print(staircase.reversalIntensities)
-approxThreshold = np.average(staircase.reversalIntensities[-2:])
-approxThresholdCorrected = approxThreshold+SLM_OFFSET
 print('Average Speech Performance (raw): %.3f' % (approxThreshold))
 print('Average Speech Performance (corrected ): %.3f' % (approxThreshold+SLM_OFFSET))
 print('Noise Level (dB): %.3f' % (expInfo['Noise Level (dB)']))

@@ -3,6 +3,10 @@
     background noise. Noise must be played externally (e.g., from 
     Audition). 
 
+    THIS VERSION USES THE PSYCHOPY PTB AUDIO LIBRARY. It 
+    does not currently support multichannel audio or sound device 
+    selection. 
+
     NOTES:
         1. If you run out of stimuli (i.e., do not reach threshold 
         before the stimuli are exhausted), the routine will end 
@@ -76,7 +80,7 @@ else:
 try:
     expInfo = fromFile('lastParams.pickle')
 except:
-    expInfo = {'Subject':'999', 'Condition':'Quiet', 'List Numbers':'5 8', 'Step Size':2.0, 'Starting Level': 65.0, 'Noise Level (dB)':70.0, 'Calibration':'n', 'SLM Output':80.0}
+    expInfo = {'Subject':'999', 'Condition':'Quiet', 'List Numbers':'1 2', 'Step Size':2.0, 'Starting Level': 65.0, 'Noise Level (dB)':70.0, 'Calibration':'n', 'SLM Output':80.0}
 expInfo['dateStr'] = data.getDateStr()
 
 dlg = gui.DlgFromDict(expInfo, title='Adaptive SNR50 Task',
@@ -217,9 +221,9 @@ for thisIncrement in staircase:
     counter += 1 # for cycling through list of audio file names
 
     # Initialize stimulus
-    try:
+    try: # Import stimulus from file
         [fs, myTarget] = wavfile.read('audio\\IEEE\\' + fileList[counter])
-    except:
+    except: # No stimuli left in list
         dataFile.close()
         staircase.saveAsPickle(fileName)
         feedback1 = visual.TextStim(

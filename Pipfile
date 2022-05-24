@@ -7,6 +7,7 @@ name = "pypi"
 soundfile = "*"
 pandas = "*"
 pydub = "*"
+pandastable = "*"
 
 [dev-packages]
 
