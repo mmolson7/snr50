@@ -8,6 +8,10 @@ soundfile = "*"
 pandas = "*"
 pydub = "*"
 pandastable = "*"
+sounddevice = "*"
+psychopy = "*"
+matplotlib = "*"
+numpy = "*"
 
 [dev-packages]
 
