@@ -38,9 +38,9 @@
 #import this
 from psychopy import core, visual, gui, data, event, prefs
 from psychopy.tools.filetools import fromFile, toFile
-import psychtoolbox as ptb
-prefs.hardware['audioLib'] = ['PTB']
-from psychopy import sound # Import "sound" AFTER assigning library!!
+#import psychtoolbox as ptb
+#prefs.hardware['audioLib'] = ['PTB']
+#from psychopy import sound # Import "sound" AFTER assigning library!!
 
 # Import published modules
 import numpy as np
@@ -50,6 +50,9 @@ import os
 import sys
 from scipy.io import wavfile
 import sounddevice as sd
+
+sd.default.device=18
+sd.default.samplerate = 48000
 
 sys.path.append('.\\lib') # Point to custom library file
 import tmsignals as ts # Custom library
@@ -90,7 +93,7 @@ else:
     core.quit()
 
 # Reference level for calibration and use with offset
-REF_LEVEL = -20.0
+REF_LEVEL = -30.0
 
 ###################################
 #### BEGIN CALIBRATION ROUTINE ####
@@ -100,21 +103,16 @@ REF_LEVEL = -20.0
 if expInfo['Calibration'] == 'y':
     print('Playing calibration file')
     [fs, calStim] = wavfile.read('calibration\\IEEE_cal.wav')
+    #[fs, calStim] = wavfile.read('calibration\\wgn_cal.wav')
     # Normalize between 1/-1
     calStim = ts.doNormalize(calStim, 48000)
     # Set target level
     calStim = ts.setRMS(calStim,REF_LEVEL,eq='n')
+    #plt.plot(calStim)
+    #plt.show()
     sigdur = len(calStim) / fs
-    # Present using PsychoPy PTB
-    # probe = sound.Sound(value=calStim.T,
-    #     secs=sigdur, stereo=-1, volume=1.0, loops=0, 
-    #     sampleRate=fs, blockSize=4800, preBuffer=-1, 
-    #     hamming=False, startTime=0, stopTime=-1, 
-    #     autoLog=True)
-    # probe.play()
-    # core.wait(probe.secs+0.001)
     # Present using sounddevice
-    sd.play(calStim,fs)
+    sd.play(calStim.T,mapping=[3])
     core.wait(sigdur+0.01)
     core.quit()
 #################################
@@ -179,8 +177,8 @@ staircase = data.StairHandler(startVal = STARTING_LEVEL,
                               stepSizes=[expInfo['Step Size']],
                               nup=1,
                               nDown=1,
-                              nTrials=2,
-                              nReversals=3,
+                              nTrials=20,
+                              nReversals=8,
                               applyInitialRule=True,
                               minVal=-100,
                               maxVal=0)
@@ -248,10 +246,12 @@ for thisIncrement in staircase:
     """
     # Present calibration stimulus for testing
     [fs, calStim] = wavfile.read('calibration\\IEEE_cal.wav')
+    #[fs, calStim] = wavfile.read('calibration\\wgn_cal.wav')
     myTarget = calStim[:int(len(calStim)/2)] # truncate
     # Normalize between +1/-1
     myTarget = ts.doNormalize(myTarget,48000)
     """
+    
 
     # Set target level (taken from thisIncrement on each loop iteration)
     myTarget = ts.setRMS(myTarget,thisIncrement,eq='n')
@@ -284,7 +284,7 @@ for thisIncrement in staircase:
     # probe.play()
     # core.wait(probe.secs+0.001)
     # Present using sounddevice
-    sd.play(myTarget, fs)
+    sd.play(myTarget,mapping=[3])
     core.wait(sigdur+0.01)
 
     # Clear the window
